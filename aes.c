@@ -22,6 +22,10 @@
 
 #include <stdio.h>
 
+#if DRIVER
+#include <ntddk.h>
+#define AES_TAG 'Astg'
+#endif
 /****************************** MACROS ******************************/
 // The least significant uint8_t of the uint32_t is rotated to the end.
 #define KE_ROTWORD(x) (((x) << 8) | ((x) >> 24))
@@ -369,8 +373,12 @@ int aes_encrypt_ccm(const uint8_t payload[], uint32_t payload_len, const uint8_t
 
 	if (assoc_len > 32768 /* = 2^15 */)
 		return(FALSE);
-
+#if DRIVER
+	buf = (uint8_t*)ExAllocatePoolWithTag(NonPagedPool, payload_len + assoc_len + 48, AES_TAG);
+#else
 	buf = (uint8_t*)malloc(payload_len + assoc_len + 48 /*Round both payload and associated data up a block size and add an extra block.*/);
+#endif
+
 	if (! buf)
 		return(FALSE);
 
@@ -407,7 +415,11 @@ int aes_encrypt_ccm(const uint8_t payload[], uint32_t payload_len, const uint8_t
 	// Encrypt the MAC with CTR mode with a counter starting at 0.
 	aes_encrypt_ctr(&out[payload_len], mac_len, &out[payload_len], key, keysize, counter);
 
+#if DRIVER
+	ExFreePoolWithTag(buf,AES_TAG);
+#else
 	free(buf);
+#endif
 	*out_len = payload_len + mac_len;
 
 	return(TRUE);
@@ -425,8 +437,11 @@ int aes_decrypt_ccm(const uint8_t ciphertext[], uint32_t ciphertext_len, const u
 
 	if (ciphertext_len <= mac_len)
 		return(FALSE);
-
+#if DRIVER
+	buf = (uint8_t*)ExAllocatePoolWithTag(NonPagedPool, assoc_len + ciphertext_len + 48, AES_TAG);
+#else
 	buf = (uint8_t*)malloc(assoc_len + ciphertext_len /*ciphertext_len = plaintext_len + mac_len*/ + 48);
+#endif
 	if (! buf)
 		return(FALSE);
 
@@ -476,8 +491,11 @@ int aes_decrypt_ccm(const uint8_t ciphertext[], uint32_t ciphertext_len, const u
 			memset(plaintext, 0, *plaintext_len);
 		}
 	}
-
+#if DRIVER
+	ExFreePoolWithTag(buf, AES_TAG);
+#else
 	free(buf);
+#endif
 
 	return(TRUE);
 }
